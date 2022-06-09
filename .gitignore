@@ -1,0 +1,11 @@
+
+*.pdb
+*.tmp
+*.recipe
+*.obj
+*.log
+*.tlog
+*.idb
+*.png
+*.fnt
+*.tga
