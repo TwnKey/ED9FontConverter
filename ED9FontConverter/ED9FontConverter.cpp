@@ -150,8 +150,8 @@ bool generate_new_XSpacing_and_YOffset_xlsx(std::string font_name, std::string f
 	size_t cnter = 2;
 	for (auto char_it = chars.begin(); char_it != chars.end(); char_it++) {
 		auto cell_char = wks.cell(cnter, 1);
-		auto cell_Y = wks.cell(cnter, 3);
-		auto cell_X = wks.cell(cnter, 2);
+		auto cell_Y = wks.cell(cnter, 2);
+		auto cell_X = wks.cell(cnter, 3);
 		auto cell_YBearing = wks.cell(cnter, 4);
 		UChar32 char32 = char_it->second.code;
 		icu::UnicodeString src(char32);
@@ -530,9 +530,9 @@ int main(int argc, char* argv[])
 				AddShortToVector(characters_bin, 0x100);
 			else 
 				AddShortToVector(characters_bin, 0x200);
-			AddShortToVector(characters_bin, it->second.XSpacing);
+			AddShortToVector(characters_bin, 0);
 			AddShortToVector(characters_bin, it->second.YOffset);
-			AddShortToVector(characters_bin, it->second.NoIdea);
+			AddShortToVector(characters_bin, it->second.XSpacing);
 		}
 		AddIntToVector(fnt_file_head, characters_bin.size());
 		std::vector<uint8_t> fnt_file = fnt_file_head;
