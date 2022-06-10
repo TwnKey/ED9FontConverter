@@ -66,7 +66,7 @@ void AddIntToVector(std::vector<uint8_t>& vec, uint32_t i) {
 	vec.insert(vec.end(), i_b.begin(), i_b.end());
 }
 
-bool generate_new_XSpacing_and_YOffset_xlsx(std::string font_name, std::string fallback_font, std::map<uint32_t, character> chars) {
+bool generate_new_XSpacing_and_YOffset_xlsx(std::string font_name, std::vector<std::string> fallback_fonts, std::map<uint32_t, character> chars) {
 
 	FT_Library    library;
 	FT_GlyphSlot  slot;
@@ -107,11 +107,16 @@ bool generate_new_XSpacing_and_YOffset_xlsx(std::string font_name, std::string f
 		
 		code = FT_Get_Char_Index(face, char_code);
 		if (code == 0) {
-			FT_Done_Face(face);
+			
 			//printf("code : %x n'existe pas\n", code);
 			//std::cout << "Character doesnt exist " << std::hex << char_code << std::endl;
-			error = FT_New_Face(library, fallback_font.c_str(), 0, &face);
-			code = FT_Get_Char_Index(face, char_code);
+			for (std::string fallback : fallback_fonts) {
+				FT_Done_Face(face);
+				error = FT_New_Face(library, fallback.c_str(), 0, &face);
+				code = FT_Get_Char_Index(face, char_code);
+				if (code != 0)
+					break;
+			}
 			if (code == 0)
 			{
 				char_it->second.XSpacing = -1;
@@ -178,7 +183,7 @@ bool generate_new_XSpacing_and_YOffset_xlsx(std::string font_name, std::string f
 
 }
 
-bool write_string_in_png(std::string s, std::string font_name, std::string fallback_font, std::map<uint32_t, character> chars) {
+bool write_string_in_png(std::string s, std::string font_name, std::vector<std::string> fallback_fonts, std::map<uint32_t, character> chars) {
 
 
 
@@ -209,11 +214,17 @@ bool write_string_in_png(std::string s, std::string font_name, std::string fallb
 		error = FT_New_Face(library, font_name.c_str(), 0, &face);
 		code = FT_Get_Char_Index(face, char_code);
 		if (code == 0) {
-			FT_Done_Face(face);
 			//printf("code : %x n'existe pas\n", code);
 			//std::cout << "Character doesnt exist " << std::hex << char_code << std::endl;
-			error = FT_New_Face(library, fallback_font.c_str(), 0, &face);
-			code = FT_Get_Char_Index(face, char_code);
+			
+			for (std::string fallback : fallback_fonts) {
+				FT_Done_Face(face);
+				error = FT_New_Face(library, fallback.c_str(), 0, &face);
+				code = FT_Get_Char_Index(face, char_code);
+				if (code != 0)
+					break;
+			}
+
 			/*if (code == 0)
 				std::cout << "Unicode doesnt exist in the fall back font  " << std::hex << char_code << std::endl;*/
 		}
@@ -286,16 +297,21 @@ bool write_string_in_png(std::string s, std::string font_name, std::string fallb
 
 int main(int argc, char* argv[])
 {
-	if (argc == 4) {
+	if (argc >= 4) {
 		size_t image_width = 4096;
 		size_t image_height = 4096;
 		size_t full_image_size = image_width * image_height * 3; //RGB
 		char * output_file = new char[full_image_size];
 		memset(output_file, 0, full_image_size);
-
+		std::vector<std::string> fallback_fonts = {};
 		std::string font_name = std::string(argv[1]);
 		XLDocument InputFNT = XLDocument(argv[2]);
-		std::string fallback_font = std::string(argv[3]);
+		for (unsigned int i = 3; i < argc; i++) {
+			std::string fallback_font = std::string(argv[i]);
+			std::cout << "adding font: " << fallback_font << std::endl;
+			fallback_fonts.push_back(fallback_font);
+		}
+		
 		auto wkbk = InputFNT.workbook();
 		size_t sheet_cnt = wkbk.sheetCount();
 		auto sheet_names = wkbk.sheetNames();
@@ -352,8 +368,8 @@ int main(int argc, char* argv[])
 		int code;
 		int idx;
 
-		write_string_in_png("test lol ypqzZWRkK@", font_name, fallback_font, characters);
-		generate_new_XSpacing_and_YOffset_xlsx(font_name, fallback_font, characters);
+		write_string_in_png("test lol ypqzZWRkK@", font_name, fallback_fonts, characters);
+		generate_new_XSpacing_and_YOffset_xlsx(font_name, fallback_fonts, characters);
 		int nb_char = characters.size();
 
 		int current_green_pointer = 0;
@@ -374,13 +390,20 @@ int main(int argc, char* argv[])
 			char_code = char_it->second.code;
 			code = FT_Get_Char_Index(face, char_code);
 			if (code == 0) {
-				FT_Done_Face(face);
+				
 				//printf("code : %x n'existe pas\n", code);
 				//std::cout << "Character doesnt exist " << std::hex << char_code << std::endl;
-				error = FT_New_Face(library, fallback_font.c_str(), 0, &face);
-				code = FT_Get_Char_Index(face, char_code);
+
+				for (std::string fallback : fallback_fonts) {
+					FT_Done_Face(face);
+					error = FT_New_Face(library, fallback.c_str(), 0, &face);
+					code = FT_Get_Char_Index(face, char_code);
+					if (code != 0)
+						break;
+				}
+				
 				if (code == 0) {
-					std::cout << "Unicode doesnt exist in the fallback font  " << std::hex << char_code << std::endl;
+					std::cout << "Unicode doesnt exist in the fallback fonts  " << std::hex << char_code << std::endl;
 					char_it->second.non_existent = true;
 				}
 					
@@ -472,11 +495,11 @@ int main(int argc, char* argv[])
 
 				if (green) {
 
-					current_green_pointer = origin + bitmap->width * 3;
+					current_green_pointer = origin + (bitmap->width + 2)* 3;
 
 				}
 				else {
-					current_red_pointer = origin + bitmap->width * 3 ;
+					current_red_pointer = origin + (bitmap->width + 2) * 3 ;
 				}
 
 
@@ -521,7 +544,7 @@ int main(int argc, char* argv[])
 		for (auto it = characters.cbegin(); it != characters.cend(); it++)
 		{
 			AddIntToVector(characters_bin, it->second.code);
-			AddIntToVector(characters_bin, 2);
+			AddIntToVector(characters_bin, 1);
 			AddShortToVector(characters_bin, it->second.OriginX);
 			AddShortToVector(characters_bin, it->second.OriginY);
 			AddShortToVector(characters_bin, it->second.Width);
