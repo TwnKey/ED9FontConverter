@@ -2,7 +2,8 @@
 
 The font system is complicated. 
 The .fnt file contains a list of characters and their attributes. That structure is 0x18 bytes long.\
-![image](https://user-images.githubusercontent.com/69110695/173181150-c4cbe3c0-29fa-4ea1-b933-d82b8e8d2fdc.png)\
+![image](https://user-images.githubusercontent.com/69110695/173181150-c4cbe3c0-29fa-4ea1-b933-d82b8e8d2fdc.png)
+
 The first 4 bytes are the unicode of the character (here 0x20, space); \
 the following 4 bytes are an integer which we will call Type, which can be 0 1 2 4 in the base font, but could actually be 3, 5, 6, 7 as well (which would be a mix of 1/2/4 together, I didn't think about the implications yet.)\
 The two shorts after are the origin X and Y in the GNF file in pixels. \
@@ -59,7 +60,8 @@ The dialog kerning when Type is set to 1 seems to work like this: They take half
 Another note:
 The constant hardcoded in exe seems to be 0x2C (44) pixels.
 ![image](https://user-images.githubusercontent.com/69110695/173191788-6d100277-b882-4a28-912a-1124e36c4a33.png)
-\in Type 0, that gap of 44 will be present and you can control it to improve it a bit using the 0x12 byte of the space character (don't ask me how the f it works like this but the code suggests this), but you CAN'T reduce it as it will get saturated to 44 if you get below it.\
+
+in Type 0, that gap of 44 will be present and you can control it to improve it a bit using the 0x12 byte of the space character (don't ask me how the f it works like this but the code suggests this), but you CAN'T reduce it as it will get saturated to 44 if you get below it.\
 in Type 1, that gap becomes 22. You still can't reduce it, only add to it.\
 in Type 2, I think that gap is present and the 0x16 byte will add to it in the right.\
 finally in Type 4, while that gap is present the 0x16 byte will to it to the left\
