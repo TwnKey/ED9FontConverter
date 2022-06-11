@@ -51,3 +51,7 @@ Finally, outside of this function, we have this block: \
 Which means that the first kerning is multiplied by 1.0 before being added to the second kerning, then another value is multiplying the total.
 
 This means the kerning, or actually the position of the character, is seemingly controlled by two components, the first and the second "kerning".
+
+
+Additional note: I realized whether or not the 0x16 short is set to bitmap->width + 2 it will have no influence on the dialog kerning.
+The dialog kerning when Type is set to 1 seems to work like this: They take half of the bitmap of the character and add a constant offset of "current font width" / 2, the next character will be drawn with the center of its bitmap at this position. This means in "time", the m will be closer to the i than in "s." where the width of the dot character is so tiny that it leaves a lot of space on the left.
