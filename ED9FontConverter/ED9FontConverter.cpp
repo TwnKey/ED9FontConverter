@@ -267,7 +267,7 @@ bool write_string_in_png(std::string s, std::string font_name, std::vector<std::
 
 
 			unsigned int imageIndex;
-			unsigned int origin = 48;
+			unsigned int origin = CHAR_HEIGHT;
 			unsigned int bitmapIndex;
 			int current_row;
 			origin = current_green_pointer;
@@ -591,6 +591,9 @@ int main(int argc, char* argv[])
 					char_it->second.green = green;
 					char_it->second.Width = old_char.Width;
 					char_it->second.Height = old_char.Height + old_char.YOffset;
+					if (char_it->second.Height > CHAR_HEIGHT)
+						char_it->second.Height = CHAR_HEIGHT;
+					char_it->second.YOffset = 0;// old_char.YOffset;
 					char_it->second.OriginX = current_col;
 					char_it->second.OriginY = current_row;
 					unsigned int offset_old_tga = 2;
@@ -601,10 +604,10 @@ int main(int argc, char* argv[])
 
 
 					//for (int y = old_char.Height -1; y >= 0 ; y--) {
-					for (int y = (old_tga_height - old_char.OriginY) - 1; y >= old_tga_height - old_char.OriginY - old_char.Height; y--) {
-						for (unsigned int x = old_char.OriginX; x < old_char.OriginX + old_char.Width; x++) {
+					for (int y = (old_tga_height - old_char.OriginY) - 1; y >= old_tga_height - old_char.OriginY - char_it->second.Height; y--) {
+						for (unsigned int x = old_char.OriginX; x < old_char.OriginX + char_it->second.Width; x++) {
 							//imageIndex = origin + x * 3 + ((old_char.Height - y) + old_char.YOffset) * (image_width * 3);
-							imageIndex = origin + (x - old_char.OriginX) * 3 + ((-(y - ((old_tga_height - old_char.OriginY) - 1)))) * (image_width * 3);
+							imageIndex = origin + (x - old_char.OriginX) * 3 + ((-(y - ((old_tga_height - old_char.OriginY) - 1))) + char_it->second.YOffset) * (image_width * 3);
 							unsigned int imageIndex_old_tga = 0x12 + x * old_tga_nrComponents + y * (old_tga_width * old_tga_nrComponents);
 							imageIndex_old_tga = imageIndex_old_tga + offset_old_tga;
 							//std::cout << imageIndex + offset << " " << imageIndex_old_tga;
