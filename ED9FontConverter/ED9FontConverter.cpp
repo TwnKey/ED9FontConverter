@@ -36,11 +36,21 @@ struct character {
 	int Height;
 	bool green;
 	int YBearing;
+	int Type;
 	bool non_existent = false;
+	bool original_font = false;
 	character() = default;
-    character(int c, int x, int y, int idk): code(c), XSpacing(x), YOffset(y), NoIdea(idk){
+    character(int c, int type, int x, int y, int idk, bool orig): code(c), Type(type), XSpacing(x), YOffset(y), NoIdea(idk), original_font(orig){
     }
 };
+
+unsigned int GetIntFromBytes(unsigned int addr, std::vector<uint8_t> data) {
+	return data[addr + 0] + (data[addr + 1] << 8) + (data[addr + 2] << 16) + (data[addr + 3] << 24);
+}
+
+unsigned int GetShortFromBytes(unsigned int addr, std::vector<uint8_t> data) {
+	return data[addr + 0] + (data[addr + 1] << 8);
+}
 
 std::vector<unsigned char> GetBytesFromInt(int i) {
 	std::vector<unsigned char> result;
@@ -254,16 +264,20 @@ bool write_string_in_png(std::string s, std::string font_name, std::vector<std::
 
 			FT_Int image_top_row = origin_y + yBearing + yoff;
 			auto bitmap = &slot->bitmap;
+
+
 			unsigned int imageIndex;
-			unsigned int origin = 0;
+			unsigned int origin = 48;
 			unsigned int bitmapIndex;
 			int current_row;
 			origin = current_green_pointer;
-
+			float factor = (float)0x30/ 0x44;
 			for (int y = 0; y < bitmap->rows; y++) {
 
 				for (unsigned int x = 0; x < bitmap->width; x++) {
-					imageIndex = origin + x * 3 + (chars[char_code].YOffset +  y) * (image_width * 3); //
+					int X_ = x;
+					int Y_ = (int)(factor * (chars[char_code].YOffset)) + y;
+					imageIndex = origin + (X_) * 3 + Y_ * (image_width * 3); //
 					bitmapIndex = x + y * bitmap->width;
 
 					if (bitmapIndex >= bitmap->width * bitmap->rows) break;
@@ -280,7 +294,7 @@ bool write_string_in_png(std::string s, std::string font_name, std::vector<std::
 				}
 			}
 
-			current_green_pointer = origin + chars[char_code].XSpacing * 3;
+			current_green_pointer = origin + ((int)(factor * chars[char_code].XSpacing)) * 3;
 			FT_Done_Face(face);
 
 
@@ -295,6 +309,113 @@ bool write_string_in_png(std::string s, std::string font_name, std::vector<std::
 
 }
 
+struct input_file {
+	std::map<uint32_t, character> characters;
+	std::string original_fnt_file = "";
+	std::string original_tga_file = "";
+	input_file(std::string origfnt, std::string origtga) : original_fnt_file(origfnt), original_tga_file(origtga) {
+	}
+
+
+};
+
+input_file load_chars(std::string XLSX_file) {
+	std::map<uint32_t, character> characters;
+	XLDocument InputFNT = XLDocument(XLSX_file);
+	auto wkbk = InputFNT.workbook();
+	size_t sheet_cnt = wkbk.sheetCount();
+	auto sheet_names = wkbk.sheetNames();
+
+
+
+	auto current_sheet = wkbk.worksheet(sheet_names[0]);
+
+
+	size_t cols = current_sheet.columnCount();
+	size_t rows = current_sheet.rowCount();
+
+	auto current_cell_fnt = current_sheet.cell(1, 2);
+	auto current_cell_tga = current_sheet.cell(2, 2);
+	std::string orig_fnt = current_cell_fnt.value().get<std::string>();
+	std::string orig_tga = current_cell_tga.value().get<std::string>();
+	input_file in(orig_fnt, orig_tga);
+
+
+	for (unsigned int i_row = 4; i_row < rows + 1; i_row++) {
+		auto current_cell_char = current_sheet.cell(i_row, 1);
+		auto current_cell_type = current_sheet.cell(i_row, 2);
+		auto current_cell_x = current_sheet.cell(i_row, 3);
+		auto current_cell_y = current_sheet.cell(i_row, 4);
+		auto current_cell_no_idea = current_sheet.cell(i_row, 5);
+		auto current_cell_orig = current_sheet.cell(i_row, 6);
+		std::string type = current_cell_char.value().typeAsString();
+		std::string charac_str;
+		if (type.compare("string") == 0)
+			charac_str = current_cell_char.value().get<std::string>();
+		else if (type.compare("integer") == 0)
+			charac_str = std::to_string(current_cell_char.value().get<int>());
+		icu::UnicodeString src(charac_str.c_str(), "utf8"); //read as utf8
+
+
+		/*UChar32 utf32[1];
+		UErrorCode errorCode = U_ZERO_ERROR;
+		int32_t length = src.toUTF32(utf32, 1, errorCode); //convert it from Utf8 to Utf32
+
+		std::cout << std::hex << "code : " << utf32[0] << std::endl;*/
+		character chr = character(src.char32At(0),
+			current_cell_type.value().get<int32_t>(),
+			current_cell_no_idea.value().get<int32_t>(),
+			current_cell_y.value().get<int32_t>(),
+			current_cell_x.value().get<int32_t>(),
+			current_cell_orig.value().get<unsigned int>()
+		);
+		characters[src.char32At(0)] = (chr);
+
+
+	}
+	InputFNT.close();
+	in.characters = characters;
+	return in;
+}
+
+
+std::map<uint32_t, character> read_fnt(std::string fnt_path) {
+	std::map<uint32_t, character> old_fnt = {};
+	std::ifstream input(fnt_path, std::ios::binary);
+	std::vector<unsigned char> buffer(std::istreambuf_iterator<char>(input), {});
+
+	size_t nb_chars = GetShortFromBytes(8, buffer);
+	size_t offset = GetShortFromBytes(6, buffer);
+	size_t total_size = GetIntFromBytes(offset + 4, buffer);
+	size_t origin = offset + 8;
+	for (unsigned int i = 0; i < nb_chars; i++) {
+
+		unsigned int unicode = GetIntFromBytes(origin + i * 0x18 + 0, buffer);
+		unsigned int type = GetIntFromBytes(origin + i * 0x18 + 4, buffer);
+		unsigned int origx = GetShortFromBytes(origin + i * 0x18 + 8, buffer);
+		unsigned int origy = GetShortFromBytes(origin + i * 0x18 + 0xA, buffer);
+		unsigned int width = GetShortFromBytes(origin + i * 0x18 + 0xC, buffer);
+		unsigned int height = GetShortFromBytes(origin + i * 0x18 + 0xE, buffer);
+		unsigned int green = GetShortFromBytes(origin + i * 0x18 + 0x10, buffer);
+		unsigned int dialog_spacing = GetShortFromBytes(origin + i * 0x18 + 0x12, buffer);
+		unsigned int YOffset = GetShortFromBytes(origin + i * 0x18 + 0x14, buffer);
+		unsigned int InfoBoxSpacing = GetShortFromBytes(origin + i * 0x18 + 0x16, buffer);
+		character c = character(unicode, type, dialog_spacing, YOffset, InfoBoxSpacing, true);
+		c.green = (green == 0x100);
+		c.OriginX = origx;
+		c.OriginY = origy;
+		c.Width = width;
+		c.Height = height;
+		old_fnt[c.code] = c;
+	}
+
+		
+
+	input.close();
+	return old_fnt;
+}
+
+
 int main(int argc, char* argv[])
 {
 	if (argc >= 4) {
@@ -305,52 +426,29 @@ int main(int argc, char* argv[])
 		memset(output_file, 0, full_image_size);
 		std::vector<std::string> fallback_fonts = {};
 		std::string font_name = std::string(argv[1]);
-		XLDocument InputFNT = XLDocument(argv[2]);
+		
 		for (unsigned int i = 3; i < argc; i++) {
 			std::string fallback_font = std::string(argv[i]);
-			std::cout << "adding font: " << fallback_font << std::endl;
 			fallback_fonts.push_back(fallback_font);
 		}
-		
-		auto wkbk = InputFNT.workbook();
-		size_t sheet_cnt = wkbk.sheetCount();
-		auto sheet_names = wkbk.sheetNames();
-
-		std::map<uint32_t, character> characters;
-
-		auto current_sheet = wkbk.worksheet(sheet_names[0]);
 
 
-		size_t cols = current_sheet.columnCount();
-		size_t rows = current_sheet.rowCount();
-		std::cout << rows << std::endl;
-		for (unsigned int i_row = 2; i_row < rows + 1; i_row++) {
-			auto current_cell_char = current_sheet.cell(i_row, 1);
-			auto current_cell_x = current_sheet.cell(i_row, 2);
-			auto current_cell_y = current_sheet.cell(i_row, 3);
-			auto current_cell_no_idea = current_sheet.cell(i_row, 4);
-			std::string type = current_cell_char.value().typeAsString();
-			std::string charac_str;
-			if (type.compare("string") == 0)
-				charac_str = current_cell_char.value().get<std::string>();
-			else if (type.compare("integer") == 0)
-				charac_str = std::to_string(current_cell_char.value().get<int>());
-			icu::UnicodeString src(charac_str.c_str(), "utf8"); //read as utf8
-			
-			
-			/*UChar32 utf32[1];
-			UErrorCode errorCode = U_ZERO_ERROR;
-			int32_t length = src.toUTF32(utf32, 1, errorCode); //convert it from Utf8 to Utf32
+		input_file in = load_chars(std::string(argv[2]));
 
-			std::cout << std::hex << "code : " << utf32[0] << std::endl;*/
-			character chr = character(src.char32At(0),
-				current_cell_x.value().get<int32_t>(),
-				current_cell_y.value().get<int32_t>(),
-				current_cell_no_idea.value().get<int32_t>()
-			);
-			characters[src.char32At(0)] = (chr);
-
-
+		std::map<uint32_t, character> old_fnt = {};
+		std::vector<uint8_t> buffer_tga_in = {};
+		int old_tga_width = 0, old_tga_height = 0, old_tga_nrComponents = 0;
+		if (in.original_fnt_file.compare("") != 0)
+		{
+			old_fnt = read_fnt(in.original_fnt_file);
+			if (in.original_tga_file.compare("") != 0) {
+				std::ifstream input(in.original_tga_file, std::ios::binary);
+				buffer_tga_in = std::vector<unsigned char>(std::istreambuf_iterator<char>(input), {});
+				input.close();
+				old_tga_width = GetShortFromBytes(0xC, buffer_tga_in);
+				old_tga_height = GetShortFromBytes(0xE, buffer_tga_in);
+				old_tga_nrComponents = buffer_tga_in[0x10]/8; //BGRA
+			}
 		}
 		//We got all the characters needed.
 		FT_Library    library;
@@ -368,9 +466,9 @@ int main(int argc, char* argv[])
 		int code;
 		int idx;
 
-		write_string_in_png("test lol ypqzZWRkK@", font_name, fallback_fonts, characters);
-		generate_new_XSpacing_and_YOffset_xlsx(font_name, fallback_fonts, characters);
-		int nb_char = characters.size();
+		write_string_in_png("necessities time", font_name, fallback_fonts, in.characters);
+		generate_new_XSpacing_and_YOffset_xlsx(font_name, fallback_fonts, in.characters);
+		int nb_char = in.characters.size();
 
 		int current_green_pointer = 0;
 		int current_red_pointer = 0;
@@ -383,7 +481,7 @@ int main(int argc, char* argv[])
 		bool green = true;
 		error = FT_Init_FreeType(&library);
 
-		auto char_it = characters.begin();
+		auto char_it = in.characters.begin();
 
 		for (idx = 0; idx < nb_char; idx += 1) {
 			error = FT_New_Face(library, font_name.c_str(), 0, &face);
@@ -408,53 +506,25 @@ int main(int argc, char* argv[])
 				}
 					
 			}
-			if (code != 0) {
-				//std::cout << "Character exists " << std::hex << char_code << std::endl;
-				error = FT_Set_Pixel_Sizes(face,
-					char_width,
-					char_height);
+			if (char_code == 0x20) //The space character is different: its bitmap is empty (size zero) but you actually want it to be non zero, because the 0x12 byte of space will affect all characters so it needs to be small, but could also have been used to set a good width for the space (since 0x12 is an additional kerning component, I think); therefore we solve the problem by drawing a blank space of a certain width in the tga
+			{
 
-				slot = face->glyph;
-
-				
-
-				//printf("code : %x existe\n", code);
-				FT_Load_Glyph(face, code, FT_LOAD_RENDER);
-
-
-				int activate = 0;
-				uint8_t cur_pix_to_render = 0x0;
-				int left_offset = 0;
-
-
-				int idx_byte_output = 0;
-				activate = 0;
-				int tot = 0;
-
-				FT_Int yBearing = face->glyph->metrics.horiBearingY / 64;
-
-				FT_Int yoff = 0;//c.Yoffset;
-
-				FT_Int image_top_row = origin_y + yBearing + yoff;
-				auto bitmap = &slot->bitmap;
-				unsigned int imageIndex;
-				unsigned int origin = 0;
-				unsigned int bitmapIndex;
-				int current_row;
+				unsigned int space_width = ceil(CHAR_WIDTH * 0.416);
+				unsigned int origin;
 
 				if (green) {
 					origin = current_green_pointer;
-					
+
 				}
 				else {
 					origin = current_red_pointer;
 
 				}
-				current_row = origin / (image_width * 3);
-				unsigned int current_col = (origin - current_row * (image_width * 3))/3;
+				unsigned current_row = origin / (image_width * 3);
+				unsigned int current_col = (origin - current_row * (image_width * 3)) / 3;
 
-				if ((current_col + bitmap->width) > image_width) {
-					
+				if ((current_col + space_width) > image_width) {
+
 					size_t letter_row_unit = (char_height * image_width * 3); // 48 * 4096 * 3 bytes
 					size_t nb_letter_rows = origin / letter_row_unit;
 					origin = (nb_letter_rows + 1) * letter_row_unit;
@@ -462,61 +532,207 @@ int main(int argc, char* argv[])
 					current_col = (origin - current_row * (image_width * 3)) / 3;
 				}
 
-				char_it->second.green = green;
-				char_it->second.Width = bitmap->width;
-				char_it->second.Height = bitmap->rows;
-				char_it->second.OriginX = current_col;
-				char_it->second.OriginY = current_row;
-
-
-				for (int y = bitmap->rows - 1; y >= 0; y--) {
-
-					for (unsigned int x = 0; x < bitmap->width; x++) {
-						imageIndex = origin + x * 3 + (y) * (image_width * 3);
-						bitmapIndex = x + y * bitmap->width;
-
-						if (bitmapIndex >= bitmap->width * bitmap->rows) break;
-
-						unsigned int R_addr = imageIndex;
-						unsigned int G_addr = (imageIndex + 1);
-						if ((R_addr >= 0) && (G_addr < full_image_size)) {
-
-							size_t index;
-
-							if (green)
-								index = imageIndex + 1;
-							else
-								index = imageIndex;
-							output_file[index] = bitmap->buffer[bitmapIndex];
-						}
-
-					}
-				}
-
 				if (green) {
 
-					current_green_pointer = origin + (bitmap->width + 2)* 3;
+					current_green_pointer = current_green_pointer + (space_width + 2) * 3;
 
 				}
 				else {
-					current_red_pointer = origin + (bitmap->width + 2) * 3 ;
+					current_red_pointer = current_red_pointer + (space_width + 2) * 3;
 				}
 
+				char_it->second.green = green;
+				char_it->second.Width = space_width;
+				char_it->second.Height = 1;
+				char_it->second.OriginX = current_col;
+				char_it->second.OriginY = current_row;
+				char_it->second.XSpacing = space_width;
 
 				FT_Done_Face(face);
-				
-
 				green = !green;
+			}
+			else if (code != 0) {
+
+
+				if (char_it->second.original_font == 1) {
+					unsigned int offset = 0;
+					if (green)
+						offset = 1;
+					character old_char = old_fnt[char_it->second.code];
+
+					unsigned int imageIndex = 0;
+					int OriginX = old_char.OriginX;
+					int OriginY = old_char.OriginY;
+					int Width = old_char.Width;
+					int Height = old_char.Height;
+					unsigned int origin;
+					int current_row;
+
+					if (green) {
+						origin = current_green_pointer;
+
+					}
+					else {
+						origin = current_red_pointer;
+
+					}
+					current_row = origin / (image_width * 3);
+					unsigned int current_col = (origin - current_row * (image_width * 3)) / 3;
+
+					if ((current_col + old_char.Width + 2) > image_width) {
+
+						size_t letter_row_unit = (char_height * image_width * 3); // 48 * 4096 * 3 bytes
+						size_t nb_letter_rows = origin / letter_row_unit;
+						origin = (nb_letter_rows + 1) * letter_row_unit;
+						current_row = origin / (image_width * 3);
+						current_col = (origin - current_row * (image_width * 3)) / 3;
+					}
+
+					char_it->second.green = green;
+					char_it->second.Width = old_char.Width;
+					char_it->second.Height = old_char.Height + old_char.YOffset;
+					char_it->second.OriginX = current_col;
+					char_it->second.OriginY = current_row;
+					unsigned int offset_old_tga = 2;
+					if (old_char.green)
+						offset_old_tga = 1;
+
+					unsigned int origin_old_tga = 0x12 + old_char.OriginX * old_tga_nrComponents + (old_tga_height - old_char.OriginY - 1) * (old_tga_width * old_tga_nrComponents);
+
+
+					//for (int y = old_char.Height -1; y >= 0 ; y--) {
+					for (int y = (old_tga_height - old_char.OriginY) - 1; y >= old_tga_height - old_char.OriginY - old_char.Height; y--) {
+						for (unsigned int x = old_char.OriginX; x < old_char.OriginX + old_char.Width; x++) {
+							//imageIndex = origin + x * 3 + ((old_char.Height - y) + old_char.YOffset) * (image_width * 3);
+							imageIndex = origin + (x - old_char.OriginX) * 3 + ((-(y - ((old_tga_height - old_char.OriginY) - 1)))) * (image_width * 3);
+							unsigned int imageIndex_old_tga = 0x12 + x * old_tga_nrComponents + y * (old_tga_width * old_tga_nrComponents);
+							imageIndex_old_tga = imageIndex_old_tga + offset_old_tga;
+							//std::cout << imageIndex + offset << " " << imageIndex_old_tga;
+							output_file[imageIndex + offset] = buffer_tga_in[imageIndex_old_tga];
+						}
+					}
+					if (green) {
+
+						current_green_pointer = origin + (old_char.Width + 2) * 3;
+
+					}
+					else {
+						current_red_pointer = origin + (old_char.Width +2)* 3;
+					}
+					green = !green;
+				}
+				else {
+
+					//std::cout << "Character exists " << std::hex << char_code << std::endl;
+					error = FT_Set_Pixel_Sizes(face,
+						char_width,
+						char_height);
+
+					slot = face->glyph;
+
+
+
+					//printf("code : %x existe\n", code);
+					FT_Load_Glyph(face, code, FT_LOAD_RENDER);
+
+
+					int activate = 0;
+					uint8_t cur_pix_to_render = 0x0;
+					int left_offset = 0;
+
+
+					int idx_byte_output = 0;
+					activate = 0;
+					int tot = 0;
+
+					FT_Int yBearing = face->glyph->metrics.horiBearingY / 64;
+
+					FT_Int yoff = 0;//c.Yoffset;
+
+					FT_Int image_top_row = origin_y + yBearing + yoff;
+					auto bitmap = &slot->bitmap;
+					unsigned int imageIndex;
+					unsigned int origin = 0;
+					unsigned int bitmapIndex;
+					int current_row;
+
+					if (green) {
+						origin = current_green_pointer;
+
+					}
+					else {
+						origin = current_red_pointer;
+
+					}
+					current_row = origin / (image_width * 3);
+					unsigned int current_col = (origin - current_row * (image_width * 3)) / 3;
+
+					if ((current_col + bitmap->width + 2) > image_width) {
+
+						size_t letter_row_unit = (char_height * image_width * 3); // 48 * 4096 * 3 bytes
+						size_t nb_letter_rows = origin / letter_row_unit;
+						origin = (nb_letter_rows + 1) * letter_row_unit;
+						current_row = origin / (image_width * 3);
+						current_col = (origin - current_row * (image_width * 3)) / 3;
+					}
+
+					char_it->second.green = green;
+					char_it->second.Width = bitmap->width;
+					char_it->second.Height = bitmap->rows + char_it->second.YOffset;
+					char_it->second.OriginX = current_col;
+					char_it->second.OriginY = current_row;
+
+
+					for (int y = bitmap->rows - 1; y >= 0; y--) {
+
+						for (unsigned int x = 0; x < bitmap->width; x++) {
+							imageIndex = origin + x * 3 + (y + char_it->second.YOffset) * (image_width * 3);
+							bitmapIndex = x + y * bitmap->width;
+
+							if (bitmapIndex >= bitmap->width * bitmap->rows) break;
+
+							unsigned int R_addr = imageIndex;
+							unsigned int G_addr = (imageIndex + 1);
+							if ((R_addr >= 0) && (G_addr < full_image_size)) {
+
+								size_t index;
+
+								if (green)
+									index = imageIndex + 1;
+								else
+									index = imageIndex;
+								output_file[index] = bitmap->buffer[bitmapIndex];
+							}
+
+						}
+					}
+
+					if (green) {
+
+						current_green_pointer = origin + (bitmap->width + 2) * 3;
+
+					}
+					else {
+						current_red_pointer = origin + (bitmap->width + 2) * 3;
+					}
+
+					
+
+					FT_Done_Face(face);
+
+
+					green = !green;
+				}
 			}
 			char_it++;
 		}
 
-		for (auto it = characters.cbegin(); it != characters.cend(); )
+		for (auto it = in.characters.cbegin(); it != in.characters.cend(); )
 		{
 
 			if (it->second.non_existent)
 			{
-				characters.erase(it++);   
+				in.characters.erase(it++);
 			}
 			else
 			{
@@ -530,7 +746,7 @@ int main(int argc, char* argv[])
 
 		//generating the fnt
 		std::vector<uint8_t> fnt_file_head = { 0x46, 0x43, 0x56, 0x00, 0x02, 0x00, 0x20, 0x00 };
-		AddIntToVector(fnt_file_head, characters.size());
+		AddIntToVector(fnt_file_head, in.characters.size());
 		AddShortToVector(fnt_file_head, 0x44);
 		AddShortToVector(fnt_file_head, 0x03);
 		AddShortToVector(fnt_file_head, 0x01);
@@ -541,10 +757,10 @@ int main(int argc, char* argv[])
 		AddIntToVector(fnt_file_head, 0x49544C46);
 		std::vector<uint8_t> characters_bin = {};
 
-		for (auto it = characters.cbegin(); it != characters.cend(); it++)
+		for (auto it = in.characters.cbegin(); it != in.characters.cend(); it++)
 		{
 			AddIntToVector(characters_bin, it->second.code);
-			AddIntToVector(characters_bin, 1);
+			AddIntToVector(characters_bin, it->second.Type);
 			AddShortToVector(characters_bin, it->second.OriginX);
 			AddShortToVector(characters_bin, it->second.OriginY);
 			AddShortToVector(characters_bin, it->second.Width);
@@ -554,10 +770,13 @@ int main(int argc, char* argv[])
 			else 
 				AddShortToVector(characters_bin, 0x200);
 			AddShortToVector(characters_bin, 0);
-			AddShortToVector(characters_bin, it->second.YOffset);
-			AddShortToVector(characters_bin, it->second.XSpacing);
+			AddShortToVector(characters_bin, 0);//it->second.YOffset
+			AddShortToVector(characters_bin, it->second.XSpacing + 2);
 		}
 		AddIntToVector(fnt_file_head, characters_bin.size());
+		//First character, space, is special, because it affects the spacing of all characters
+		characters_bin[0x12] = 0xFD;
+		characters_bin[0x13] = 0xFF;
 		std::vector<uint8_t> fnt_file = fnt_file_head;
 		fnt_file.insert(fnt_file.end(), characters_bin.begin(), characters_bin.end());
 	
