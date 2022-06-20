@@ -1,3 +1,7 @@
+# Preview of the current result
+Translation in french of a scene from Kuro no Kiseki using a font generating with this tool
+https://www.youtube.com/watch?v=siPvwii_7YM&ab_channel=LeLiberlNews
+
 # How this font seemingly works
 
 The font system is complicated. 
