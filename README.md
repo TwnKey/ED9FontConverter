@@ -49,3 +49,4 @@ This means the spacing, or actually the position of the character, is seemingly 
 
 Right now I don't have the knowledge to understand why it is that complicated (and basically not usable for variable width font in dialog unless you set some constant to 0).
 
+Note: Another thing that is really bothering: even though you can adjust the y position of the character using the 0x14 byte, for some reason there will be 1 or 2 pixel off (up or down) probably due to some clamping along the way. This is probably what is also happening in the JP base font where the characters are clearly misaligned. This seems like an actual bug for me that should be solved on falcom's end (not that they care though), the workaround we found was to align the character in the GNF/TGA file and set the Y position to 0 for all, which makes us lose a bit of space in the texture technically but there is still plenty (especially if blue is usable)
