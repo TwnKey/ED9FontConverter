@@ -138,7 +138,6 @@ bool generate_new_XSpacing_and_YOffset_xlsx(std::string font_name, std::vector<s
 			error = FT_Set_Pixel_Sizes(face,
 				char_width,
 				char_height);
-
 			slot = face->glyph;
 			FT_Load_Glyph(face, code, FT_LOAD_RENDER);
 
@@ -148,9 +147,10 @@ bool generate_new_XSpacing_and_YOffset_xlsx(std::string font_name, std::vector<s
 
 			char_it->second.XSpacing = slot->bitmap.width + 2;
 			
-			FT_Done_Face(face);
+			
 
 		}
+		FT_Done_Face(face);
 		char_it++;
 	}
 	FT_Done_FreeType(library);
@@ -466,7 +466,7 @@ int main(int argc, char* argv[])
 		int code;
 		int idx;
 
-		write_string_in_png("necessities time", font_name, fallback_fonts, in.characters);
+		//write_string_in_png("necessities time", font_name, fallback_fonts, in.characters);
 		generate_new_XSpacing_and_YOffset_xlsx(font_name, fallback_fonts, in.characters);
 		int nb_char = in.characters.size();
 
@@ -480,9 +480,13 @@ int main(int argc, char* argv[])
 
 		bool green = true;
 		error = FT_Init_FreeType(&library);
+		size_t extra_space = 3;
 
 		auto char_it = in.characters.begin();
-
+		unsigned int current_row_height_red = CHAR_HEIGHT;
+		unsigned int current_row_height_green = CHAR_HEIGHT;
+		unsigned int current_Y_line_red = 0;
+		unsigned int current_Y_line_green = 0;
 		for (idx = 0; idx < nb_char; idx += 1) {
 			error = FT_New_Face(library, font_name.c_str(), 0, &face);
 			char_code = char_it->second.code;
@@ -514,20 +518,37 @@ int main(int argc, char* argv[])
 
 				if (green) {
 					origin = current_green_pointer;
+					current_row_height_green = std::max(current_row_height_green, (unsigned int)CHAR_HEIGHT);
 
 				}
 				else {
 					origin = current_red_pointer;
+					current_row_height_red = std::max(current_row_height_red, (unsigned int)CHAR_HEIGHT);
+
 
 				}
 				unsigned current_row = origin / (image_width * 3);
 				unsigned int current_col = (origin - current_row * (image_width * 3)) / 3;
+				
 
 				if ((current_col + space_width) > image_width) {
+					if (green) {
+						size_t letter_row_unit = (current_row_height_green * image_width * 3); // 48 * 4096 * 3 bytes
 
-					size_t letter_row_unit = (char_height * image_width * 3); // 48 * 4096 * 3 bytes
-					size_t nb_letter_rows = origin / letter_row_unit;
-					origin = (nb_letter_rows + 1) * letter_row_unit;
+						origin = current_Y_line_green + letter_row_unit;
+
+						current_Y_line_green = origin;
+						current_row_height_green = 0;
+					}
+					else {
+						size_t letter_row_unit = (current_row_height_red * image_width * 3); // 48 * 4096 * 3 bytes
+
+						origin = current_Y_line_red + letter_row_unit;
+
+						current_Y_line_red = origin;
+						current_row_height_red = 0;
+					}
+					
 					current_row = origin / (image_width * 3);
 					current_col = (origin - current_row * (image_width * 3)) / 3;
 				}
@@ -570,21 +591,43 @@ int main(int argc, char* argv[])
 
 					if (green) {
 						origin = current_green_pointer;
+						current_row_height_green = std::max(current_row_height_green, (unsigned int)char_it->second.YOffset + char_it->second.Height);
 
 					}
 					else {
 						origin = current_red_pointer;
+						current_row_height_red = std::max(current_row_height_red, (unsigned int)char_it->second.YOffset + char_it->second.Height);
 
 					}
 					current_row = origin / (image_width * 3);
 					unsigned int current_col = (origin - current_row * (image_width * 3)) / 3;
 
-					if ((current_col + old_char.Width + 2) > image_width) {
+					
 
-						size_t letter_row_unit = (char_height * image_width * 3); // 48 * 4096 * 3 bytes
-						size_t nb_letter_rows = origin / letter_row_unit;
-						origin = (nb_letter_rows + 1) * letter_row_unit;
+
+					if ((current_col + old_char.Width + 2) > image_width) {
+						
+
+						if (green) {
+							
+							size_t letter_row_unit = (current_row_height_green * image_width * 3); // 48 * 4096 * 3 bytes
+
+							origin = current_Y_line_green + letter_row_unit;
+
+							current_Y_line_green = origin;
+							current_row_height_green = 0;
+						}
+						else {
+							
+							size_t letter_row_unit = (current_row_height_red * image_width * 3); // 48 * 4096 * 3 bytes
+
+							origin = current_Y_line_red + letter_row_unit;
+
+							current_Y_line_red = origin;
+							current_row_height_red = 0;
+						}
 						current_row = origin / (image_width * 3);
+						
 						current_col = (origin - current_row * (image_width * 3)) / 3;
 					}
 
@@ -658,34 +701,53 @@ int main(int argc, char* argv[])
 					unsigned int origin = 0;
 					unsigned int bitmapIndex;
 					int current_row;
-
+					
 					if (green) {
 						origin = current_green_pointer;
+						current_row_height_green = std::max(current_row_height_green, (unsigned int)char_it->second.YOffset + bitmap->rows);
+
 
 					}
 					else {
 						origin = current_red_pointer;
+						current_row_height_red = std::max(current_row_height_red, (unsigned int)char_it->second.YOffset + bitmap->rows);
+
 
 					}
 					current_row = origin / (image_width * 3);
 					unsigned int current_col = (origin - current_row * (image_width * 3)) / 3;
+					
+					if ((current_col + bitmap->width + 2 + extra_space) >= image_width) {
+						//std::cout << "Previous line was: " << current_row << std::endl;
+						
+						if (green) {
+							size_t letter_row_unit = (current_row_height_green * image_width * 3); // 48 * 4096 * 3 bytes
 
-					if ((current_col + bitmap->width + 2) > image_width) {
+							origin = current_Y_line_green + letter_row_unit;
 
-						size_t letter_row_unit = (char_height * image_width * 3); // 48 * 4096 * 3 bytes
-						size_t nb_letter_rows = origin / letter_row_unit;
-						origin = (nb_letter_rows + 1) * letter_row_unit;
+							current_Y_line_green = origin;
+							current_row_height_green = 0;
+						}
+						else {
+							//std::cout << "red" << std::endl;
+							size_t letter_row_unit = (current_row_height_red * image_width * 3); // 48 * 4096 * 3 bytes
+
+							origin = current_Y_line_red + letter_row_unit;
+
+							current_Y_line_red = origin;
+							current_row_height_red = 0;
+						}
 						current_row = origin / (image_width * 3);
+						//std::cout << "New line is: " << current_row << std::endl;
 						current_col = (origin - current_row * (image_width * 3)) / 3;
 					}
-
 					char_it->second.green = green;
-					char_it->second.Width = bitmap->width;
+					char_it->second.Width = bitmap->width + extra_space;
 					char_it->second.Height = bitmap->rows + char_it->second.YOffset;
 					char_it->second.OriginX = current_col;
 					char_it->second.OriginY = current_row;
 
-
+					
 					for (int y = bitmap->rows - 1; y >= 0; y--) {
 
 						for (unsigned int x = 0; x < bitmap->width; x++) {
@@ -712,11 +774,11 @@ int main(int argc, char* argv[])
 
 					if (green) {
 
-						current_green_pointer = origin + (bitmap->width + 2) * 3;
+						current_green_pointer = origin + (bitmap->width + 2 + extra_space) * 3;
 
 					}
 					else {
-						current_red_pointer = origin + (bitmap->width + 2) * 3;
+						current_red_pointer = origin + (bitmap->width + 2 + extra_space) * 3;
 					}
 
 					
@@ -772,7 +834,7 @@ int main(int argc, char* argv[])
 				AddShortToVector(characters_bin, 0x100);
 			else 
 				AddShortToVector(characters_bin, 0x200);
-			AddShortToVector(characters_bin, 0);
+			AddShortToVector(characters_bin, 0xFFFD);
 			AddShortToVector(characters_bin, 0);//it->second.YOffset
 			AddShortToVector(characters_bin, it->second.XSpacing + 2);
 		}
