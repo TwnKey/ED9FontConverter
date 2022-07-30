@@ -340,7 +340,7 @@ input_file load_chars(std::string XLSX_file) {
 	std::string orig_tga = current_cell_tga.value().get<std::string>();
 	input_file in(orig_fnt, orig_tga);
 
-
+	std::cout << rows << std::endl;
 	for (unsigned int i_row = 4; i_row < rows + 1; i_row++) {
 		auto current_cell_char = current_sheet.cell(i_row, 1);
 		auto current_cell_type = current_sheet.cell(i_row, 2);
@@ -636,7 +636,7 @@ int main(int argc, char* argv[])
 					char_it->second.Height = old_char.Height + old_char.YOffset;
 					if (char_it->second.Height > CHAR_HEIGHT)
 						char_it->second.Height = CHAR_HEIGHT;
-					char_it->second.YOffset = 0;// old_char.YOffset;
+					//char_it->second.YOffset = old_char.YOffset;
 					char_it->second.OriginX = current_col;
 					char_it->second.OriginY = current_row;
 					unsigned int offset_old_tga = 2;
